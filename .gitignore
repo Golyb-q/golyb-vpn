@@ -1,0 +1,6 @@
+_site/
+.env
+config.local.yaml
+data/
+runtime/
+*.sqlite3*
