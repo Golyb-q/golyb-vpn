@@ -36,7 +36,7 @@ function rememberSubscriptionToken(value){
 }
 function forgetSubscriptionToken(used){if(savedSubscriptionToken===used)rememberSubscriptionToken('');}
 $('sub-token').addEventListener('input',()=>rememberSubscriptionToken($('sub-token').value));
-let proxyStatus='alive';
+let proxyStatus='alive', proxySort='stability', proxyOrder='desc';
 let appliedProxyFilters=[], proxyRequestId=0, applyingProxyFilters=false, proxySearchTimer;
 const esc = value => String(value ?? '—').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const number = (value, digits=1) => value == null ? '—' : Number(value).toFixed(digits);
@@ -92,8 +92,14 @@ function chart(id, checks) {
 const manualProxyTests=new Set();
 function serverAddress(row){const host=row.server_host;if(!host)return '—';return `${host.includes(':')?'['+host+']':host}:${row.server_port}`;}
 function proxyTable(rows, manual=false) {
-  if (!rows.length) return `<div class="empty">${manual?'Совпадений нет. Проверь поиск, фильтры и выбранный статус прокси.':'Подключений пока нет'}</div>`;
-  return `<table><thead><tr><th>ЛОКАЦИЯ / АДРЕСА</th><th>ПРОТОКОЛ</th><th>СКОРОСТЬ</th><th>ЗАДЕРЖКА</th><th>STABILITY</th><th>UPTIME</th><th>ЖИЗНИ</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td><div class="country"><b>${esc(flag(r.countryCode))}</b><div>${esc(r.country)}<small>Сервер: ${esc(serverAddress(r))}</small><small>Выход: ${esc(r.exit_ip)}</small></div></div></td><td><span class="pill">${esc(r.protocol.toUpperCase())}</span></td><td>${number(r.speed)} <span class="muted">MB/s</span></td><td>${number(r.latency,0)} <span class="muted">ms</span></td><td>${esc(r.stability)}</td><td>${number(r.uptime100)}%</td><td class="${r.lives ? '' : 'dead'}">${'●'.repeat(r.lives)}${'○'.repeat(3-r.lives)}</td><td><div class="proxy-actions">${isAdmin&&manual?`<button data-proxy-test="${r.id}" ${manualProxyTests.has(r.id)?'disabled aria-busy="true"':''} aria-label="Тест URL и скорости прокси ${r.id}" title="Проверить URL и скорость; успешная проверка восстанавливает 3 жизни">${manualProxyTests.has(r.id)?'Проверяется…':'Тест'}</button>`:''}<button data-history="${r.id}">История ↗</button><button class="qr-button" data-proxy-qr="${r.id}" title="QR-код и строка подключения" aria-label="QR-код и конфигурация прокси ${r.id}">QR</button></div></td></tr>`).join('')}</tbody></table>`;
+  if (!rows.length && !manual) return '<div class="empty">Подключений пока нет</div>';
+  const columns=[['country','ЛОКАЦИЯ / АДРЕСА'],['protocol','ПРОТОКОЛ'],['speed','СКОРОСТЬ'],['latency','ЗАДЕРЖКА'],['stability','STABILITY'],['uptime100','UPTIME'],['lives','ЖИЗНИ']];
+  const headers=columns.map(([key,label])=>{
+    if(!manual)return `<th scope="col">${label}</th>`;
+    const active=proxySort===key, direction=active?(proxyOrder==='asc'?'ascending':'descending'):'none';
+    return `<th scope="col" aria-sort="${direction}"><button type="button" class="column-sort${active?' active':''}" data-proxy-sort="${key}" title="Сортировать; повторное нажатие меняет порядок">${label}<span aria-hidden="true">${active?(proxyOrder==='asc'?'↑':'↓'):'↕'}</span></button></th>`;
+  }).join('');
+  return `<table><thead><tr>${headers}<th scope="col"></th></tr></thead><tbody>${rows.map(r => `<tr><td><div class="country"><b>${esc(flag(r.countryCode))}</b><div>${esc(r.country)}<small>Сервер: ${esc(serverAddress(r))}</small><small>Выход: ${esc(r.exit_ip)}</small></div></div></td><td><span class="pill">${esc(r.protocol.toUpperCase())}</span></td><td>${number(r.speed)} <span class="muted">MB/s</span></td><td>${number(r.latency,0)} <span class="muted">ms</span></td><td>${esc(r.stability)}</td><td>${number(r.uptime100)}%</td><td class="${r.lives ? '' : 'dead'}">${'●'.repeat(r.lives)}${'○'.repeat(3-r.lives)}</td><td><div class="proxy-actions">${isAdmin&&manual?`<button data-proxy-test="${r.id}" ${manualProxyTests.has(r.id)?'disabled aria-busy="true"':''} aria-label="Тест URL и скорости прокси ${r.id}" title="Проверить URL и скорость; успешная проверка восстанавливает 3 жизни">${manualProxyTests.has(r.id)?'Проверяется…':'Тест'}</button>`:''}<button data-history="${r.id}">История ↗</button><button class="qr-button" data-proxy-qr="${r.id}" title="QR-код и строка подключения" aria-label="QR-код и конфигурация прокси ${r.id}">QR</button></div></td></tr>`).join('')}</tbody></table>${!rows.length?'<div class="empty">Совпадений нет. Проверь поиск, фильтры и выбранный статус прокси.</div>':''}`;
 }
 function drawProxies() {
   $('proxies-table').innerHTML=proxyTable(proxyRows,true);
@@ -103,7 +109,7 @@ function drawProxies() {
 }
 async function loadProxies({filters=appliedProxyFilters,pageOffset=offset,commit=false}={}) {
   const request=++proxyRequestId;
-  const query=new URLSearchParams({offset:String(pageOffset),limit:'200',search:$('proxy-search').value,orderBy:$('proxy-sort').value,order:$('proxy-order').value,includeDead:String(proxyStatus!=='alive')});
+  const query=new URLSearchParams({offset:String(pageOffset),limit:'200',search:$('proxy-search').value,orderBy:proxySort,order:proxyOrder,includeDead:String(proxyStatus!=='alive')});
   filters.forEach(filter=>query.append('filter',filter));
   if(proxyStatus==='dead')query.append('filter','(lives==0)');
   const result=await api(`${readBase}/proxies?${query}`);
@@ -116,7 +122,7 @@ async function loadProxies({filters=appliedProxyFilters,pageOffset=offset,commit
 async function applyProxyFilters(filters) {
   if(applyingProxyFilters)return;
   clearTimeout(proxySearchTimer);applyingProxyFilters=true;
-  const controls=[...document.querySelectorAll('#proxy-filter-form button, #proxy-filter-form textarea'),$('proxy-search'),$('proxy-sort'),$('proxy-order'),...document.querySelectorAll('[data-proxy-status]'),$('prev-proxies'),$('next-proxies')];
+  const controls=[...document.querySelectorAll('#proxy-filter-form button, #proxy-filter-form textarea'),$('proxy-search'),...document.querySelectorAll('#proxies-table [data-proxy-sort]'),...document.querySelectorAll('[data-proxy-status]'),$('prev-proxies'),$('next-proxies')];
   controls.forEach(el=>el.disabled=true);
   try{await loadProxies({filters,pageOffset:0,commit:true});}
   catch(error){notice(error.message,'error');}
@@ -217,7 +223,17 @@ $('source-form').onsubmit=async event=>{
 async function pause(scope,paused){try{await api('/api/pause',{method:'POST',body:JSON.stringify({scope,paused})});await refresh();}catch(e){notice(e.message,'error');}}
 $('pause-all').onclick=()=>pause('all',true);$('resume-all').onclick=()=>pause('all',false);$('pause-discovery').onclick=()=>pause('discovery',true);$('resume-discovery').onclick=()=>pause('discovery',false);
 $('proxy-search').addEventListener('input',()=>{clearTimeout(proxySearchTimer);proxySearchTimer=setTimeout(()=>loadProxies({pageOffset:0}).catch(error=>notice(error.message,'error')),300);});
-for(const id of ['proxy-sort','proxy-order'])$(id).addEventListener('change',()=>loadProxies({pageOffset:0}).catch(error=>notice(error.message,'error')));
+$('proxies-table').addEventListener('click',async event=>{
+  const button=event.target.closest('[data-proxy-sort]');
+  if(!button||applyingProxyFilters)return;
+  const key=button.dataset.proxySort;
+  proxyOrder=key===proxySort?(proxyOrder==='desc'?'asc':'desc'):['country','protocol','latency'].includes(key)?'asc':'desc';
+  proxySort=key;
+  try{
+    await loadProxies({pageOffset:0});
+    $('proxies-table').querySelector(`[data-proxy-sort="${key}"]`)?.focus({preventScroll:true});
+  }catch(error){notice(error.message,'error');}
+});
 document.querySelectorAll('[data-proxy-status]').forEach(button=>button.addEventListener('click',()=>{
   proxyStatus=button.dataset.proxyStatus;
   document.querySelectorAll('[data-proxy-status]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
