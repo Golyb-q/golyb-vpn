@@ -262,6 +262,7 @@ $('preview-sub').onclick=async()=>{
 const settingGroups = {
   discovery: [
     ['discovery_concurrency', 'Параллельных проверок Discovery', 'Максимум одновременно проверяемых кандидатов.'],
+    ['dead_retry_delay', 'Повторная проверка мёртвых, с', 'После этой паузы ранее работавшие прокси получают повторный URL + speed тест в Discovery.'],
     ['collection_delay', 'Пауза между сборами, с', 'После полного завершения текущей очереди.']
   ],
   'discovery-target': [
