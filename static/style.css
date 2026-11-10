@@ -25,4 +25,4 @@
 
 .statistics-chart{overflow:auto;margin-top:16px}.statistics-chart svg{display:block;width:100%;min-width:640px;max-height:320px}.statistics-chart text{fill:var(--muted);font:11px system-ui,sans-serif}.statistics-gridline{stroke:var(--line);stroke-width:1}.statistics-unknown{fill:#ffffff06}.statistics-legend{display:flex;gap:24px;font-size:12px}.legend-added{color:var(--lime)}.legend-died{color:var(--red)}.legend-fast{color:#8dbcf3}#proxy-import-form textarea{overflow-wrap:anywhere}
 
-.preset-picker{display:flex;align-items:end;gap:12px;margin-bottom:19px}.preset-picker label{flex:1;margin:0}.preset-editor{display:flex;align-items:end;gap:16px;flex-wrap:wrap}.preset-editor label{flex:1;min-width:180px;margin:0}.preset-editor .controls{margin:0}.preset-editor button{font-size:12px}
+.preset-picker{display:flex;align-items:end;gap:12px;margin-bottom:19px}.preset-picker label{flex:1;min-width:0;margin:0}.preset-editor{display:flex;align-items:end;gap:16px;flex-wrap:wrap}.preset-editor label{flex:1;min-width:180px;margin:0}.preset-editor .controls{margin:0}.preset-editor button{font-size:12px}
