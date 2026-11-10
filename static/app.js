@@ -134,7 +134,7 @@ let refreshInFlight=null, apiHadError=false;
 function renderStats(s){
   stats=s;
     $('alive').textContent=s.alive; $('fast').textContent=s.fast;$('source-count').textContent=s.sources;$('source-total').textContent=`из ${s.total_sources} сохранённых`;$('pending').textContent=s.pending;
-    $('alive-changes').textContent=`За час: +${s.added_last_hour||0} новых · −${s.died_last_hour||0} умерло`;
+    $('alive-changes').textContent=`За час: +${s.gained_last_hour??((s.added_last_hour||0)+(s.revived_last_hour||0))} прибавилось · −${s.died_last_hour||0} умерло`;
     chart('pulse',s.recent_checks);
     $('discovery-policy').textContent=`Цель Discovery: ${s.target_matching} / ${s.discovery_policy.target_count} · ${s.discovery_policy.filters.join(' AND ') || 'Все живые прокси'}`;
     if(isAdmin) document.querySelector('nav [data-page=moderation] span').textContent=`Предложения (${s.pending_suggestions})`;
@@ -154,21 +154,22 @@ function renderStats(s){
 function renderSources(sources){
     $('sources-table').innerHTML=sources.length?`<table><thead><tr><th>ПРИОРИТЕТ</th><th>ИСТОЧНИК</th><th>ЖИЗНИ</th><th>КОНФИГИ / НОВЫЕ</th><th>СОСТАВ МЕНЯЛСЯ</th><th>ПОСЛЕДНЯЯ ОШИБКА</th><th></th></tr></thead><tbody>${sources.map(r=>`<tr><td>${r.priority}</td><td><div class="source-address" title="${esc(r.url || r.label)}">${esc(r.url || r.label)}</div><small class="muted">${r.last_checked_at?new Date(r.last_checked_at*1000).toLocaleString():'Ожидает сбора'}</small></td><td class="${r.lives?'':'dead'}">${'●'.repeat(r.lives)}${'○'.repeat(3-r.lives)}</td><td>${r.total_configs} / ${r.unique_configs}</td><td>${r.last_changed_at?esc(new Date(r.last_changed_at*1000).toLocaleString()):'Ещё нет данных'}<small class="muted">${r.last_changed_at?Math.max(0,Math.floor((Date.now()/1000-r.last_changed_at)/86400))+' дн. без изменений':''}</small></td><td>${esc(r.last_error==='unchanged_for_7_days'?'Состав не менялся 7 дней':r.last_error || '—')}</td><td>${isAdmin ? `<button data-restore="${r.id}">Восстановить</button><button data-priority="${r.id}" data-current="${r.priority}">Приоритет</button><button data-disable="${r.id}">Отключить</button>` : ''}</td></tr>`).join('')}</tbody></table>`:'<div class="empty">Активных источников пока нет. Предложи подписку через форму выше.</div>';
 }
-function historyGraph(id, rows, series, bars=false){
+function historyGraph(id, rows, series, title){
   const root=$(id),width=960,height=260,left=52,right=18,top=16,bottom=35;
   const plotWidth=width-left-right,plotHeight=height-top-bottom,step=plotWidth/rows.length;
   const values=rows.flatMap(row=>series.map(item=>row[item.key])).filter(value=>value!=null);
   const ceiling=Math.max(4,Math.ceil(Math.max(0,...values)/4)*4);
   const y=value=>top+plotHeight*(1-value/ceiling),x=index=>left+step*(index+.5);
-  let svg=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${bars?'Новые и умершие прокси за сутки':'Живые и быстрые прокси за сутки'}">`;
+  let svg=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}">`;
   for(let i=0;i<=4;i++){const value=ceiling*i/4;svg+=`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}" class="statistics-gridline"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">${value}</text>`;}
   rows.forEach((row,index)=>{
     if(series.every(item=>row[item.key]==null))svg+=`<rect x="${left+step*index}" y="${top}" width="${step}" height="${plotHeight}" class="statistics-unknown"/>`;
     if(index%8===0||index===rows.length-1)svg+=`<text x="${x(index)}" y="${height-10}" text-anchor="middle">${esc(new Date(row.start*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}))}</text>`;
   });
-  series.forEach((item,seriesIndex)=>{
-    if(bars){rows.forEach((row,index)=>{const value=row[item.key];if(value!=null)svg+=`<rect x="${left+step*index+step*.1+seriesIndex*step*.4}" y="${y(value)}" width="${step*.35}" height="${top+plotHeight-y(value)}" fill="${item.color}"/>`;});}
-    else{let path='';rows.forEach((row,index)=>{if(row[item.key]==null){path+=' ';return;}const previous=index>0&&rows[index-1][item.key]!=null;path+=`${previous?'L':'M'}${x(index)},${y(row[item.key])} `;});svg+=`<path d="${path}" fill="none" stroke="${item.color}" stroke-width="2"/>`;rows.forEach((row,index)=>{if(row[item.key]!=null)svg+=`<circle cx="${x(index)}" cy="${y(row[item.key])}" r="2.3" fill="${item.color}"/>`;});}
+  series.forEach(item=>{
+    let path='';rows.forEach((row,index)=>{if(row[item.key]==null){path+=' ';return;}const previous=index>0&&rows[index-1][item.key]!=null;path+=`${previous?'L':'M'}${x(index)},${y(row[item.key])} `;});
+    svg+=`<path d="${path}" fill="none" stroke="${item.color}" stroke-width="2"/>`;
+    rows.forEach((row,index)=>{if(row[item.key]!=null)svg+=`<circle cx="${x(index)}" cy="${y(row[item.key])}" r="2.3" fill="${item.color}"/>`;});
   });
   rows.forEach((row,index)=>{
     const title=[new Date(row.start*1000).toLocaleString(),...series.map(item=>`${item.label}: ${row[item.key]??'нет данных'}`),row.partial?'Неполный интервал':''].filter(Boolean).join(' · ');
@@ -181,9 +182,9 @@ async function loadStatistics(){
   if(statisticsRequest)return statisticsRequest;
   statisticsRequest=(async()=>{
     const result=await api(`${readBase}/statistics`),rows=result.buckets;
-    historyGraph('statistics-events',rows,[{key:'added',label:'Новые',color:'#c1f77b'},{key:'died',label:'Умершие',color:'#ed8e91'}],true);
-    historyGraph('statistics-counts',rows,[{key:'alive',label:'Живые',color:'#c1f77b'},{key:'fast',label:'Быстрые',color:'#8dbcf3'}]);
-    $('statistics-table').innerHTML=`<table><thead><tr><th>ИНТЕРВАЛ</th><th>НОВЫЕ</th><th>УМЕРШИЕ</th><th>ЖИВЫЕ</th><th>БЫСТРЫЕ</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(new Date(row.start*1000).toLocaleString())}</td>${['added','died','alive','fast'].map(key=>`<td>${row[key]??'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    historyGraph('statistics-events',rows,[{key:'gained',label:'Новые + восстановленные',color:'#c1f77b'},{key:'died',label:'Умершие',color:'#ed8e91'}],'Новые, восстановленные и умершие прокси за сутки');
+    historyGraph('statistics-counts',rows,[{key:'alive',label:'Живые',color:'#c1f77b'},{key:'fast',label:'Быстрые',color:'#8dbcf3'}],'Живые и быстрые прокси за сутки');
+    $('statistics-table').innerHTML=`<table><thead><tr><th>ИНТЕРВАЛ</th><th>НОВЫЕ</th><th>ВОССТАНОВЛЕННЫЕ</th><th>УМЕРШИЕ</th><th>ЖИВЫЕ</th><th>БЫСТРЫЕ</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(new Date(row.start*1000).toLocaleString())}</td>${['added','revived','died','alive','fast'].map(key=>`<td>${row[key]??'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   })();
   try{await statisticsRequest;}finally{statisticsRequest=null;}
 }
