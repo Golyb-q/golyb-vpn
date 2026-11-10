@@ -81,7 +81,7 @@ function showWorkspace(){
   $('login').hidden=true;$('workspace').hidden=false;
 }
 function showLogin() { isAdmin=false; navigate('dashboard'); document.querySelectorAll('[data-admin]').forEach(el=>el.hidden=true); $('created-token').value=''; $('login').hidden=false; $('workspace').hidden=true; $('connection').textContent='Вход в панель'; }
-function navigate(page) { if (['settings','moderation','tokens'].includes(page) && !isAdmin) return; if(page !== 'tokens') { $('created-token').value=''; $('created-token-panel').hidden=true; } document.querySelectorAll('.page').forEach(el => el.hidden = el.id !== page); document.querySelectorAll('nav button').forEach(el => el.classList.toggle('selected',el.dataset.page === page)); if(page==='proxies')loadProxies().catch(error=>notice(error.message,'error')); if(page==='statistics')loadStatistics().catch(error=>notice(error.message,'error')); if(page==='moderation')loadSuggestions(); if(page==='tokens')loadTokens(); }
+function navigate(page) { if (['settings','moderation','tokens'].includes(page) && !isAdmin) return; if(page !== 'tokens') { $('created-token').value=''; $('created-token-panel').hidden=true; } document.querySelectorAll('.page').forEach(el => el.hidden = el.id !== page); document.querySelectorAll('nav button').forEach(el => el.classList.toggle('selected',el.dataset.page === page)); if(page==='proxies')loadProxies().catch(error=>notice(error.message,'error')); if(page==='statistics')loadStatistics().catch(error=>notice(error.message,'error')); if(page==='builder')loadFilterPresets().catch(error=>notice(error.message,'error')); if(page==='moderation')loadSuggestions(); if(page==='tokens')loadTokens(); }
 document.querySelectorAll('[data-page]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.page)));
 function chart(id, checks) {
   const root = $(id); root.replaceChildren();
@@ -197,6 +197,7 @@ async function refreshSections(){
   ];
   if(!$('proxies').hidden && !applyingProxyFilters)jobs.push(loadProxies());
   if(!$('statistics').hidden)jobs.push(loadStatistics());
+  if(!$('builder').hidden)jobs.push(loadFilterPresets());
   const outcomes=await Promise.allSettled(jobs), failed=outcomes.filter(result=>result.status==='rejected').length;
   if(adminMode && !token)return;
   $('connection').classList.toggle('connection-warning',Boolean(failed));
@@ -300,12 +301,64 @@ async function testProxy(id){
 }
 document.addEventListener('click',event=>{const button=event.target.closest('[data-proxy-test]');if(button)testProxy(Number(button.dataset.proxyTest));});
 $('close-history').onclick=()=>$('history-panel').hidden=true;
-$('happ-filters').onclick=()=>{
-  const lines=$('filters').value.split('\n').map(line=>line.trim()).filter(Boolean);
-  for(const condition of ['(encrypted==true)','(cipher!=aes-256-cfb)'])if(!lines.includes(condition))lines.push(condition);
-  $('filters').value=lines.join('\n');
-  notice('Фильтры по указанным ограничениям Happ добавлены');
+let filterPresets=[],filterPresetsRequest=null,presetBusy=false;
+function selectedFilterPreset(){return filterPresets.find(preset=>String(preset.id)===$('filter-preset').value);}
+function syncPresetControls(fillName=false){
+  const preset=selectedFilterPreset();
+  $('filter-preset').disabled=presetBusy;
+  $('apply-filter-preset').disabled=presetBusy||!preset;
+  $('preset-name').disabled=presetBusy;
+  $('create-filter-preset').disabled=presetBusy;
+  $('save-filter-preset').disabled=presetBusy||!preset;
+  $('delete-filter-preset').disabled=presetBusy||!preset;
+  if(fillName)$('preset-name').value=preset?.name||'';
+}
+async function loadFilterPresets(force=false){
+  if(filterPresetsRequest){if(!force)return filterPresetsRequest;await filterPresetsRequest.catch(()=>{});}
+  const pending=(async()=>{
+    const rows=await api(`${readBase}/filter-presets`),selected=$('filter-preset').value;
+    const changed=JSON.stringify(rows)!==JSON.stringify(filterPresets);
+    filterPresets=rows;
+    if(changed){
+      $('filter-preset').replaceChildren(new Option('Свои фильтры',''),...rows.map(preset=>new Option(preset.name,String(preset.id))));
+      $('filter-preset').value=rows.some(preset=>String(preset.id)===selected)?selected:'';
+    }
+    syncPresetControls();
+  })();
+  filterPresetsRequest=pending;
+  try{await pending;}finally{if(filterPresetsRequest===pending)filterPresetsRequest=null;}
+}
+function applyFilterPreset(){
+  const preset=selectedFilterPreset();
+  if(preset){$('filters').value=preset.filters.join('\n');$('subscription-url').value='';$('subscription-preview').textContent='';}
+  syncPresetControls(true);
+}
+$('filter-preset').onchange=applyFilterPreset;
+$('apply-filter-preset').onclick=applyFilterPreset;
+async function saveFilterPreset(update){
+  if(!isAdmin||presetBusy||!$('preset-name').reportValidity())return;
+  const preset=selectedFilterPreset();if(update&&!preset)return;
+  const body={name:$('preset-name').value.trim(),filters:$('filters').value.split('\n').map(line=>line.trim()).filter(Boolean)};
+  presetBusy=true;syncPresetControls();
+  try{
+    const saved=await api(update?`/api/filter-presets/${preset.id}`:'/api/filter-presets',{method:update?'PATCH':'POST',body:JSON.stringify(body)});
+    await loadFilterPresets(true);$('filter-preset').value=String(saved.id);syncPresetControls(true);
+    notice(update?'Пресет обновлён':'Пресет создан','success');
+  }catch(error){notice(error.message,'error');}
+  finally{presetBusy=false;syncPresetControls();}
+}
+$('filter-preset-form').onsubmit=event=>{event.preventDefault();saveFilterPreset(false);};
+$('save-filter-preset').onclick=()=>saveFilterPreset(true);
+$('delete-filter-preset').onclick=async()=>{
+  const preset=selectedFilterPreset();if(!isAdmin||presetBusy||!preset)return;
+  presetBusy=true;syncPresetControls();
+  try{
+    await api(`/api/filter-presets/${preset.id}`,{method:'DELETE'});await loadFilterPresets(true);
+    $('filter-preset').value='';syncPresetControls(true);notice('Пресет удалён','success');
+  }catch(error){notice(error.message,'error');}
+  finally{presetBusy=false;syncPresetControls();}
 };
+
 $('proxy-import-form').onsubmit=async event=>{
   event.preventDefault();if(!isAdmin)return;
   const button=$('proxy-import-submit'),input=$('proxy-import-uri');button.disabled=true;input.disabled=true;button.textContent='Проверяем…';
