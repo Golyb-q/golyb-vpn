@@ -183,8 +183,7 @@ async function loadStatistics(){
     const result=await api(`${readBase}/statistics`),rows=result.buckets;
     historyGraph('statistics-events',rows,[{key:'added',label:'Новые',color:'#c1f77b'},{key:'died',label:'Умершие',color:'#ed8e91'}],true);
     historyGraph('statistics-counts',rows,[{key:'alive',label:'Живые',color:'#c1f77b'},{key:'fast',label:'Быстрые',color:'#8dbcf3'}]);
-    $('statistics-coverage').textContent=`История накапливается с ${new Date(result.started_at*1000).toLocaleString()}. Время показано в часовом поясе браузера. Текущий интервал ещё не завершён.`;
-    $('statistics-table').innerHTML=`<table><thead><tr><th>ИНТЕРВАЛ</th><th>НОВЫЕ</th><th>УМЕРШИЕ</th><th>ЖИВЫЕ</th><th>БЫСТРЫЕ</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(new Date(row.start*1000).toLocaleString())}${row.partial?' *':''}</td>${['added','died','alive','fast'].map(key=>`<td>${row[key]??'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    $('statistics-table').innerHTML=`<table><thead><tr><th>ИНТЕРВАЛ</th><th>НОВЫЕ</th><th>УМЕРШИЕ</th><th>ЖИВЫЕ</th><th>БЫСТРЫЕ</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(new Date(row.start*1000).toLocaleString())}</td>${['added','died','alive','fast'].map(key=>`<td>${row[key]??'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   })();
   try{await statisticsRequest;}finally{statisticsRequest=null;}
 }
