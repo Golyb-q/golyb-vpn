@@ -302,6 +302,35 @@ async function testProxy(id){
 }
 document.addEventListener('click',event=>{const button=event.target.closest('[data-proxy-test]');if(button)testProxy(Number(button.dataset.proxyTest));});
 $('close-history').onclick=()=>$('history-panel').hidden=true;
+let subscriptionDefaultsLoaded=false,subscriptionDefaultsRequest=null,builderEdited=false;
+const builderDefaultFields=[['order-by','orderBy'],['order','order'],['limit','limit'],['format','format'],['name-template','name']];
+$('builder-form').addEventListener('input',event=>{if(event.target.id!=='sub-token')builderEdited=true;});
+$('builder-form').addEventListener('change',event=>{if(event.target.id!=='sub-token')builderEdited=true;});
+async function loadSubscriptionDefaults(){
+  if(subscriptionDefaultsLoaded)return;
+  if(subscriptionDefaultsRequest)return subscriptionDefaultsRequest;
+  subscriptionDefaultsRequest=(async()=>{
+    const defaults=await api('/api/public/subscription-defaults');
+    if(!builderEdited){
+      $('filters').value=defaults.filters.join('\n');
+      for(const [id,key] of builderDefaultFields)$(id).value=defaults[key];
+      $('unique-country').checked=defaults.uniqueCountry;
+    }
+    subscriptionDefaultsLoaded=true;
+  })();
+  try{await subscriptionDefaultsRequest;}finally{subscriptionDefaultsRequest=null;}
+}
+$('save-subscription-defaults').onclick=async()=>{
+  if(!isAdmin)return;
+  const button=$('save-subscription-defaults');button.disabled=true;
+  try{
+    const body=Object.fromEntries(builderDefaultFields.map(([id,key])=>[key,$(id).value]));
+    body.limit=Number(body.limit);body.uniqueCountry=$('unique-country').checked;
+    body.filters=$('filters').value.split('\n').map(value=>value.trim()).filter(Boolean);
+    await api('/api/subscription-defaults',{method:'PATCH',body:JSON.stringify(body)});
+    notice('Значения по умолчанию сохранены','success');
+  }catch(error){notice(error.message,'error');}finally{button.disabled=false;}
+};
 let filterPresets=[],filterPresetsRequest=null,presetBusy=false;
 function selectedFilterPreset(){return filterPresets.find(preset=>String(preset.id)===$('filter-preset').value);}
 function syncPresetControls(fillName=false){
@@ -315,6 +344,7 @@ function syncPresetControls(fillName=false){
   if(fillName)$('preset-name').value=preset?.name||'';
 }
 async function loadFilterPresets(force=false){
+  await loadSubscriptionDefaults();
   if(filterPresetsRequest){if(!force)return filterPresetsRequest;await filterPresetsRequest.catch(()=>{});}
   const pending=(async()=>{
     const rows=await api(`${readBase}/filter-presets`),selected=$('filter-preset').value;
